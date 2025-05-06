@@ -32,114 +32,118 @@ def is_likely_encrypted(data, threshold=7.0):
 
 def probe_port(host, port, timeout=3, sample_size=1024):
     """Probe a port to determine if traffic appears to be encrypted"""
+    result = {
+        "port": port,
+        "encrypted": "Unknown",
+        "confidence": "None"
+    }
+    
+    # Try SSL/TLS connection first
+    ssl_sock = None
     try:
-        # Try SSL/TLS connection first
         context = ssl.create_default_context()
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         
-        ssl_sock = None
-        regular_sock = None
+        ssl_sock = context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM), 
+                                      server_hostname=host)
+        ssl_sock.settimeout(timeout)
+        ssl_sock.connect((host, port))
         
-        try:
-            ssl_sock = context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM), 
-                                          server_hostname=host)
-            ssl_sock.settimeout(timeout)
-            ssl_sock.connect((host, port))
-            
-            # If we get here, SSL handshake succeeded
-            cipher = ssl_sock.cipher()
-            return {
-                "port": port,
-                "encrypted": True,
-                "protocol": "SSL/TLS",
-                "cipher": cipher[0] if cipher else "Unknown",
-                "confidence": "High (SSL handshake successful)"
-            }
-        except (ssl.SSLError, socket.timeout, ConnectionRefusedError):
-            # SSL handshake failed, try regular connection
-            pass
-        finally:
-            if ssl_sock:
-                try:
-                    ssl_sock.close()
-                except:
-                    pass
+        # If we get here, SSL handshake succeeded
+        cipher = ssl_sock.cipher()
+        result = {
+            "port": port,
+            "encrypted": True,
+            "protocol": "SSL/TLS",
+            "cipher": cipher[0] if cipher else "Unknown",
+            "confidence": "High (SSL handshake successful)"
+        }
+        ssl_sock.close()
+        return result
+    except (ssl.SSLError, socket.timeout, ConnectionRefusedError):
+        # SSL handshake failed, try regular connection
+        pass
+    except Exception:
+        # Other error with SSL, try regular connection
+        pass
+    finally:
+        if ssl_sock:
+            try:
+                ssl_sock.close()
+            except:
+                pass
+    
+    # Try regular TCP connection and analyze traffic
+    regular_sock = None
+    try:
+        regular_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        regular_sock.settimeout(timeout)
+        regular_sock.connect((host, port))
         
-        # Try regular TCP connection and analyze traffic
-        try:
-            regular_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            regular_sock.settimeout(timeout)
-            regular_sock.connect((host, port))
-            
-            # Send random data to trigger a response
-            test_data = bytes([random.randint(0, 255) for _ in range(64)])
-            regular_sock.send(test_data)
-            
-            # Receive response
-            response = regular_sock.recv(sample_size)
-            
-            # Analyze entropy of the response
-            entropy_value = entropy(response)
-            is_encrypted = is_likely_encrypted(response)
-            
-            confidence = "Medium"
-            if entropy_value > 7.5:
-                confidence = "High"
-            elif entropy_value < 6.0:
-                confidence = "Low"
-            
-            protocol = "Unknown"
-            if port == 80:
-                protocol = "HTTP" if not is_encrypted else "Unknown (possible encrypted)"
-            elif port == 443:
-                protocol = "HTTPS/TLS"
-            elif port == 554:
-                protocol = "RTSP" if not is_encrypted else "RTSPS"
-            
-            return {
-                "port": port,
-                "encrypted": is_encrypted,
-                "entropy": round(entropy_value, 2),
-                "protocol": protocol,
-                "confidence": confidence,
-                "data_len": len(response)
-            }
-        except socket.timeout:
-            return {
-                "port": port,
-                "encrypted": "Unknown",
-                "error": "Connection timed out",
-                "confidence": "None"
-            }
-        except ConnectionRefusedError:
-            return {
-                "port": port,
-                "encrypted": "Unknown",
-                "error": "Connection refused",
-                "confidence": "None"
-            }
-        except Exception as e:
-            return {
-                "port": port,
-                "encrypted": "Unknown",
-                "error": str(e),
-                "confidence": "None"
-            }
-        finally:
-            if regular_sock:
-                try:
-                    regular_sock.close()
-                except:
-                    pass
-            
+        # Send random data to trigger a response
+        test_data = bytes([random.randint(0, 255) for _ in range(64)])
+        regular_sock.send(test_data)
+        
+        # Receive response
+        response = regular_sock.recv(sample_size)
+        
+        # Analyze entropy of the response
+        entropy_value = entropy(response)
+        is_encrypted_value = is_likely_encrypted(response)
+        
+        confidence = "Medium"
+        if entropy_value > 7.5:
+            confidence = "High"
+        elif entropy_value < 6.0:
+            confidence = "Low"
+        
+        protocol = "Unknown"
+        if port == 80:
+            protocol = "HTTP" if not is_encrypted_value else "Unknown (possible encrypted)"
+        elif port == 443:
+            protocol = "HTTPS/TLS"
+        elif port == 554:
+            protocol = "RTSP" if not is_encrypted_value else "RTSPS"
+        
+        result = {
+            "port": port,
+            "encrypted": is_encrypted_value,
+            "entropy": round(entropy_value, 2),
+            "protocol": protocol,
+            "confidence": confidence,
+            "data_len": len(response)
+        }
+        
+    except socket.timeout:
+        result = {
+            "port": port,
+            "encrypted": "Unknown",
+            "error": "Connection timed out",
+            "confidence": "None"
+        }
+    except ConnectionRefusedError:
+        result = {
+            "port": port,
+            "encrypted": "Unknown",
+            "error": "Connection refused",
+            "confidence": "None"
+        }
     except Exception as e:
-        return {
+        result = {
             "port": port,
             "encrypted": "Unknown",
             "error": str(e),
             "confidence": "None"
         }
+    finally:
+        if regular_sock:
+            try:
+                regular_sock.close()
+            except:
+                pass
+    
+    return result
 
 def scan_host(host, ports=None, timeout=3):
     """Scan multiple ports on a host"""
@@ -156,7 +160,8 @@ def scan_host(host, ports=None, timeout=3):
     def scan_worker(port):
         result = probe_port(host, port, timeout)
         with print_lock:
-            print(f"Port {port}: {result}")
+            # Use safer string representation of result
+            print(f"Port {port}: {str(result)}")
         results.append(result)
     
     # Start threads for parallel scanning
@@ -172,34 +177,55 @@ def scan_host(host, ports=None, timeout=3):
     
     return sorted(results, key=lambda x: x["port"])
 
+def print_result(result):
+    """Pretty print a single port result"""
+    print(f"Port {result['port']}:")
+    for key, value in result.items():
+        if key != 'port':  # Already printed port
+            print(f"  {key}: {value}")
+    print("")
+
 def main():
     parser = argparse.ArgumentParser(description='Check if communication on various ports is encrypted')
     parser.add_argument('host', help='IP address or hostname of the NVR')
     parser.add_argument('-p', '--ports', type=int, nargs='+', help='Ports to scan (space-separated)')
     parser.add_argument('-t', '--timeout', type=int, default=3, help='Connection timeout in seconds')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Show detailed results')
     
     args = parser.parse_args()
     
     print(f"Scanning {args.host} for encrypted communications...")
-    results = scan_host(args.host, args.ports, args.timeout)
     
-    print("\nSummary:")
-    print("=" * 70)
-    print(f"{'Port':<8} {'Encrypted':<10} {'Protocol':<15} {'Entropy':<10} {'Confidence':<10}")
-    print("-" * 70)
-    
-    for result in results:
-        encrypted = result.get("encrypted", "Unknown")
-        protocol = result.get("protocol", "Unknown")
-        entropy = result.get("entropy", "N/A")
-        confidence = result.get("confidence", "None")
+    try:
+        results = scan_host(args.host, args.ports, args.timeout)
         
-        print(f"{result['port']:<8} {str(encrypted):<10} {protocol:<15} {str(entropy):<10} {confidence:<10}")
+        print("\nSummary:")
+        print("=" * 70)
+        print(f"{'Port':<8} {'Encrypted':<10} {'Protocol':<15} {'Entropy':<10} {'Confidence':<10}")
+        print("-" * 70)
+        
+        for result in results:
+            encrypted = result.get("encrypted", "Unknown")
+            protocol = result.get("protocol", "Unknown")
+            entropy = result.get("entropy", "N/A")
+            confidence = result.get("confidence", "None")
+            
+            print(f"{result['port']:<8} {str(encrypted):<10} {protocol:<15} {str(entropy):<10} {confidence:<10}")
+        
+        print("=" * 70)
+        print("Note: High entropy (>7.0) typically indicates encrypted traffic.")
+        print("      SSL/TLS connections are definitively encrypted.")
+        print("      Results are probabilistic for non-SSL connections.")
+        
+        if args.verbose:
+            print("\nDetailed results:")
+            for result in results:
+                print_result(result)
     
-    print("=" * 70)
-    print("Note: High entropy (>7.0) typically indicates encrypted traffic.")
-    print("      SSL/TLS connections are definitively encrypted.")
-    print("      Results are probabilistic for non-SSL connections.")
+    except KeyboardInterrupt:
+        print("\nScan interrupted by user.")
+    except Exception as e:
+        print(f"\nError during scan: {e}")
 
 if __name__ == "__main__":
     main()
