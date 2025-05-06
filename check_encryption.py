@@ -1,0 +1,179 @@
+import socket
+import ssl
+import threading
+import time
+import math
+import random
+import argparse
+from collections import Counter
+
+def entropy(data):
+    """Calculate Shannon entropy of given bytes data"""
+    if not data:
+        return 0.0
+    
+    counter = Counter(data)
+    data_len = len(data)
+    probabilities = [count / data_len for count in counter.values()]
+    
+    # Calculate entropy
+    return -sum(p * math.log2(p) for p in probabilities)
+
+def is_likely_encrypted(data, threshold=7.0):
+    """
+    Check if data is likely encrypted based on entropy.
+    Encrypted data typically has high entropy (close to 8 bits per byte).
+    """
+    if not data:
+        return False
+    
+    data_entropy = entropy(data)
+    return data_entropy > threshold
+
+def probe_port(host, port, timeout=3, sample_size=1024):
+    """Probe a port to determine if traffic appears to be encrypted"""
+    try:
+        # Try SSL/TLS connection first
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        
+        ssl_sock = context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM), 
+                                      server_hostname=host)
+        ssl_sock.settimeout(timeout)
+        
+        try:
+            ssl_sock.connect((host, port))
+            # If we get here, SSL handshake succeeded
+            cipher = ssl_sock.cipher()
+            ssl_sock.close()
+            return {
+                "port": port,
+                "encrypted": True,
+                "protocol": "SSL/TLS",
+                "cipher": cipher[0] if cipher else "Unknown",
+                "confidence": "High (SSL handshake successful)"
+            }
+        except (ssl.SSLError, socket.timeout, ConnectionRefusedError):
+            # SSL handshake failed, try regular connection
+            pass
+        finally:
+            ssl_sock.close()
+        
+        # Try regular TCP connection and analyze traffic
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((host, port))
+        
+        # Send random data to trigger a response
+        test_data = bytes([random.randint(0, 255) for _ in range(64)])
+        sock.send(test_data)
+        
+        # Receive response
+        response = sock.recv(sample_size)
+        sock.close()
+        
+        # Analyze entropy of the response
+        entropy_value = entropy(response)
+        is_encrypted = is_likely_encrypted(response)
+        
+        confidence = "Medium"
+        if entropy_value > 7.5:
+            confidence = "High"
+        elif entropy_value < 6.0:
+            confidence = "Low"
+        
+        protocol = "Unknown"
+        if port == 80:
+            protocol = "HTTP" if not is_encrypted else "Unknown (possible encrypted)"
+        elif port == 443:
+            protocol = "HTTPS/TLS"
+        elif port == 554:
+            protocol = "RTSP" if not is_encrypted else "RTSPS"
+        
+        return {
+            "port": port,
+            "encrypted": is_encrypted,
+            "entropy": round(entropy_value, 2),
+            "protocol": protocol,
+            "confidence": confidence,
+            "data_len": len(response)
+        }
+        
+    except (socket.timeout, ConnectionRefusedError) as e:
+        return {
+            "port": port,
+            "encrypted": "Unknown",
+            "error": str(e),
+            "confidence": "None"
+        }
+    except Exception as e:
+        return {
+            "port": port,
+            "encrypted": "Unknown",
+            "error": f"Unexpected error: {str(e)}",
+            "confidence": "None"
+        }
+
+def scan_host(host, ports=None, timeout=3):
+    """Scan multiple ports on a host"""
+    if ports is None:
+        # Common NVR and camera ports
+        ports = [80, 443, 554, 8000, 8080, 9000, 37777, 37778, 8554]
+    
+    results = []
+    threads = []
+    
+    # Create a lock for thread-safe printing
+    print_lock = threading.Lock()
+    
+    def scan_worker(port):
+        result = probe_port(host, port, timeout)
+        with print_lock:
+            print(f"Port {port}: {result}")
+        results.append(result)
+    
+    # Start threads for parallel scanning
+    for port in ports:
+        thread = threading.Thread(target=scan_worker, args=(port,))
+        thread.start()
+        threads.append(thread)
+        time.sleep(0.1)  # Small delay to avoid overwhelming the target
+    
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+    
+    return sorted(results, key=lambda x: x["port"])
+
+def main():
+    parser = argparse.ArgumentParser(description='Check if communication on various ports is encrypted')
+    parser.add_argument('host', help='IP address or hostname of the NVR')
+    parser.add_argument('-p', '--ports', type=int, nargs='+', help='Ports to scan (space-separated)')
+    parser.add_argument('-t', '--timeout', type=int, default=3, help='Connection timeout in seconds')
+    
+    args = parser.parse_args()
+    
+    print(f"Scanning {args.host} for encrypted communications...")
+    results = scan_host(args.host, args.ports, args.timeout)
+    
+    print("\nSummary:")
+    print("=" * 70)
+    print(f"{'Port':<8} {'Encrypted':<10} {'Protocol':<15} {'Entropy':<10} {'Confidence':<10}")
+    print("-" * 70)
+    
+    for result in results:
+        encrypted = result.get("encrypted", "Unknown")
+        protocol = result.get("protocol", "Unknown")
+        entropy = result.get("entropy", "N/A")
+        confidence = result.get("confidence", "None")
+        
+        print(f"{result['port']:<8} {str(encrypted):<10} {protocol:<15} {str(entropy):<10} {confidence:<10}")
+    
+    print("=" * 70)
+    print("Note: High entropy (>7.0) typically indicates encrypted traffic.")
+    print("      SSL/TLS connections are definitively encrypted.")
+    print("      Results are probabilistic for non-SSL connections.")
+
+if __name__ == "__main__":
+    main()
