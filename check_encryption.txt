@@ -38,15 +38,17 @@ def probe_port(host, port, timeout=3, sample_size=1024):
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         
-        ssl_sock = context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM), 
-                                      server_hostname=host)
-        ssl_sock.settimeout(timeout)
+        ssl_sock = None
+        regular_sock = None
         
         try:
+            ssl_sock = context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM), 
+                                          server_hostname=host)
+            ssl_sock.settimeout(timeout)
             ssl_sock.connect((host, port))
+            
             # If we get here, SSL handshake succeeded
             cipher = ssl_sock.cipher()
-            ssl_sock.close()
             return {
                 "port": port,
                 "encrypted": True,
@@ -58,60 +60,84 @@ def probe_port(host, port, timeout=3, sample_size=1024):
             # SSL handshake failed, try regular connection
             pass
         finally:
-            ssl_sock.close()
+            if ssl_sock:
+                try:
+                    ssl_sock.close()
+                except:
+                    pass
         
         # Try regular TCP connection and analyze traffic
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect((host, port))
-        
-        # Send random data to trigger a response
-        test_data = bytes([random.randint(0, 255) for _ in range(64)])
-        sock.send(test_data)
-        
-        # Receive response
-        response = sock.recv(sample_size)
-        sock.close()
-        
-        # Analyze entropy of the response
-        entropy_value = entropy(response)
-        is_encrypted = is_likely_encrypted(response)
-        
-        confidence = "Medium"
-        if entropy_value > 7.5:
-            confidence = "High"
-        elif entropy_value < 6.0:
-            confidence = "Low"
-        
-        protocol = "Unknown"
-        if port == 80:
-            protocol = "HTTP" if not is_encrypted else "Unknown (possible encrypted)"
-        elif port == 443:
-            protocol = "HTTPS/TLS"
-        elif port == 554:
-            protocol = "RTSP" if not is_encrypted else "RTSPS"
-        
-        return {
-            "port": port,
-            "encrypted": is_encrypted,
-            "entropy": round(entropy_value, 2),
-            "protocol": protocol,
-            "confidence": confidence,
-            "data_len": len(response)
-        }
-        
-    except (socket.timeout, ConnectionRefusedError) as e:
-        return {
-            "port": port,
-            "encrypted": "Unknown",
-            "error": str(e),
-            "confidence": "None"
-        }
+        try:
+            regular_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            regular_sock.settimeout(timeout)
+            regular_sock.connect((host, port))
+            
+            # Send random data to trigger a response
+            test_data = bytes([random.randint(0, 255) for _ in range(64)])
+            regular_sock.send(test_data)
+            
+            # Receive response
+            response = regular_sock.recv(sample_size)
+            
+            # Analyze entropy of the response
+            entropy_value = entropy(response)
+            is_encrypted = is_likely_encrypted(response)
+            
+            confidence = "Medium"
+            if entropy_value > 7.5:
+                confidence = "High"
+            elif entropy_value < 6.0:
+                confidence = "Low"
+            
+            protocol = "Unknown"
+            if port == 80:
+                protocol = "HTTP" if not is_encrypted else "Unknown (possible encrypted)"
+            elif port == 443:
+                protocol = "HTTPS/TLS"
+            elif port == 554:
+                protocol = "RTSP" if not is_encrypted else "RTSPS"
+            
+            return {
+                "port": port,
+                "encrypted": is_encrypted,
+                "entropy": round(entropy_value, 2),
+                "protocol": protocol,
+                "confidence": confidence,
+                "data_len": len(response)
+            }
+        except socket.timeout:
+            return {
+                "port": port,
+                "encrypted": "Unknown",
+                "error": "Connection timed out",
+                "confidence": "None"
+            }
+        except ConnectionRefusedError:
+            return {
+                "port": port,
+                "encrypted": "Unknown",
+                "error": "Connection refused",
+                "confidence": "None"
+            }
+        except Exception as e:
+            return {
+                "port": port,
+                "encrypted": "Unknown",
+                "error": str(e),
+                "confidence": "None"
+            }
+        finally:
+            if regular_sock:
+                try:
+                    regular_sock.close()
+                except:
+                    pass
+            
     except Exception as e:
         return {
             "port": port,
             "encrypted": "Unknown",
-            "error": f"Unexpected error: {str(e)}",
+            "error": str(e),
             "confidence": "None"
         }
 
