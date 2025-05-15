@@ -1,1 +1,16 @@
 https://github.com/ibm-messaging/mq-dev-samples/blob/master/gettingStarted/installing-mq-ubuntu/mq-ubuntu-install.sh
+CVE-2022-32207 (x2)
+CVE-2023-23914 (x2)
+CVE-2022-37434
+CVE-2024-45337
+
+CVE-2024-52046 (x2)
+CVE-2024-53990
+
+CVE-2025-24813
+
+CVE-2025-24813
+
+CVE-2025-24813
+
+CVE-2024-45337
