@@ -14,3 +14,13 @@ CVE-2025-24813
 CVE-2025-24813
 
 CVE-2024-45337
+
+
+
+A penetration test was conducted on the TRAM project highlighting several security concerns within the AWS infrastructure. While many of the issues found are technical in nature, they primarily concern the risk of unauthorised access and potential data exposure. It’s important to address these vulnerabilities, as they could impact the confidentiality, integrity, and availability of sensitive project data.
+
+Several high-risk findings were identified, which are critical for the project’s security. Most notably, there are gaps in user access management, such as accounts lacking essential security measures like Multi-Factor Authentication (MFA). This leaves accounts vulnerable to unauthorised access. Additionally, sensitive information like API keys and credentials was found in places where it could be easily accessed, which poses a serious security risk. We also found that certain user groups have excessive access rights, allowing individuals without proper security measures to access critical systems. Addressing these issues requires implementing stricter policies on user access controls and ensuring that MFA is enforced for all accounts with sensitive roles.
+
+In addition to these high-risk issues, several medium and low-risk findings were also observed. These include misconfigurations in permissions that could potentially allow unauthorised actions across services, and a lack of monitoring for key system activities. While these issues are not as immediately threatening, they could lead to more significant problems if left unaddressed. Strengthening policies around system monitoring and restricting permissions to the minimum necessary will help mitigate these risks.
+
+Overall, the primary focus should be on strengthening security policies related to user access and data protection. This includes enforcing MFA across all user accounts, ensuring sensitive data is securely stored, and implementing stricter controls on who has access to critical systems. By addressing these vulnerabilities, the TRAM project can significantly reduce its exposure to security threats and ensure a more robust, secure infrastructure moving forward.
