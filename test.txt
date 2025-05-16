@@ -24,3 +24,13 @@ Several high-risk findings were identified, which are critical for the projectâ€
 In addition to these high-risk issues, several medium and low-risk findings were also observed. These include misconfigurations in permissions that could potentially allow unauthorised actions across services, and a lack of monitoring for key system activities. While these issues are not as immediately threatening, they could lead to more significant problems if left unaddressed. Strengthening policies around system monitoring and restricting permissions to the minimum necessary will help mitigate these risks.
 
 Overall, the primary focus should be on strengthening security policies related to user access and data protection. This includes enforcing MFA across all user accounts, ensuring sensitive data is securely stored, and implementing stricter controls on who has access to critical systems. By addressing these vulnerabilities, the TRAM project can significantly reduce its exposure to security threats and ensure a more robust, secure infrastructure moving forward.
+
+
+
+
+
+
+Regularly Update and Patch Systems: Ensure all software, libraries, and underlying operating systems are kept up-to-date with the latest security patches. This is crucial for addressing known vulnerabilities in third-party components.
+Secure Coding Practices: Implement and enforce secure coding standards across the development lifecycle. This includes input validation, output encoding, and proper error handling.
+Configuration Management: Securely manage configurations, avoiding hardcoded sensitive information like infrastructure details. Store such details in external, secured configuration files or services.  Â  
+Regular Security Audits: Conduct periodic security audits and penetration tests to proactively identify and address new vulnerabilities.
