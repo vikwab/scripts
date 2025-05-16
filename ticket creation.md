@@ -59,3 +59,52 @@ Based on the findings from your penetration test, here is a summary of the ident
     * Define and apply appropriate length constraints to all `VARCHAR` columns based on the expected data. [cite: 15]
     * Implement other necessary data type constraints to ensure data integrity. [cite: 14] For example, instead of `CREATE TABLE IF NOT EXISTS cert_config (id BIGINT NOT NULL PRIMARY KEY, description VARCHAR, filer_carrier_id VARCHAR NOT NULL, ...);`, specify lengths: `CREATE TABLE IF NOT EXISTS cert_config (id BIGINT NOT NULL PRIMARY KEY, description VARCHAR(255), filer_carrier_id VARCHAR(50) NOT NULL, ...);`. [cite: 14, 15]
     * Consider using more specialised data types where appropriate (e.g., `UUID` for unique identifiers) to enforce format and uniqueness. [cite: 16]
+
+
+
+
+Okay, here's a description, impact, and remediation steps for the identified vulnerabilities, suitable for a penetration test report using British English:
+
+---
+
+## Vulnerability: Weak SSL/TLS Cipher Suites Supported (SWEET32)
+
+**CVE ID:** CVE-2016-2183
+**Severity:** Medium
+
+### Description
+The SSL/TLS service on port 443 was found to support the `TLS_RSA_WITH_3DES_EDE_CBC_SHA` cipher suite. This cipher suite utilises the Triple DES (3DES) symmetric encryption algorithm, which employs a 64-bit block size. It is known to be vulnerable to a cryptographic attack called SWEET32. This attack is a type of birthday attack that allows a man-in-the-middle attacker, under certain conditions (such as a long-lived HTTPS connection), to recover small amounts of plaintext from encrypted traffic by capturing and analysing a large volume of data (approximately 785GB).
+
+### Impact
+If successfully exploited, an attacker capable of monitoring network traffic between a user and the vulnerable server could potentially decrypt sensitive information from the encrypted session. This could include session cookies, authentication credentials, or other confidential data transmitted over the HTTPS connection. While the attack requires a significant amount of data to be captured, long-lived sessions common in some web applications can increase the feasibility of such an attack. The use of this deprecated cipher suite weakens the overall security posture of the SSL/TLS communication.
+
+### Remediation Steps
+1.  **Disable 3DES Cipher Suites:** Reconfigure the SSL/TLS service to disable support for all cipher suites that use 3DES. Specifically, `TLS_RSA_WITH_3DES_EDE_CBC_SHA` should be removed from the list of accepted ciphers.
+2.  **Prioritise Strong Cipher Suites:** Ensure the server is configured to use strong, modern cipher suites. Recommended options typically include those using AES-GCM (e.g., `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`, `TLS_AES_128_GCM_SHA256` for TLSv1.3) or AES-CBC with robust key exchange mechanisms, provided they are not vulnerable to other attacks.
+3.  **Regularly Review Cipher Configuration:** Periodically review and update the SSL/TLS cipher suite configuration to align with current industry best practices and to remove any ciphers that have been found to be weak or deprecated.
+4.  **Server-Side Cipher Preference:** If not already configured, ensure the server dictates the choice of cipher suite (`cipher preference: server`) rather than the client. This helps enforce the use of the strongest mutually supported cipher.
+
+---
+
+## Vulnerability: Lack of Forward Secrecy in SSL/TLS Configuration
+
+**Severity:** Medium
+
+### Description
+The SSL/TLS service on port 443 does not support cipher suites that provide Forward Secrecy (also known as Perfect Forward Secrecy or PFS). The Nmap scan reported: "Forward Secrecy not supported by any cipher". Forward Secrecy is a property of cryptographic key exchange mechanisms that ensures that if the server's long-term private key is compromised, past encrypted sessions cannot be decrypted. The currently configured RSA-based key exchange cipher suites (e.g., `TLS_RSA_WITH_AES_128_CBC_SHA`, `TLS_RSA_WITH_AES_256_GCM_SHA384`) do not offer this protection.
+
+### Impact
+Without Forward Secrecy, if an attacker gains access to the server's private key (for example, through a server breach, social engineering, or cryptanalysis at some point in the future), they would be able to decrypt any previously captured SSL/TLS traffic that was encrypted using that key. This could expose all historical sensitive data transmitted to and from the server, even if the server is subsequently secured or the key is changed.
+
+### Remediation Steps
+1.  **Enable Cipher Suites Supporting Forward Secrecy:** Reconfigure the SSL/TLS service to enable and prioritise cipher suites that provide Forward Secrecy. These typically use Ephemeral Diffie-Hellman key exchange mechanisms, such as:
+    * `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`
+    * `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`
+    * `TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA`
+    * `TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA`
+    * Cipher suites available with TLSv1.3 (e.g., `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256`, `TLS_AES_128_GCM_SHA256`) inherently provide Forward Secrecy.
+2.  **Prioritise ECDHE over DHE:** Where possible, prefer Elliptic Curve Diffie-Hellman Ephemeral (ECDHE) cipher suites over traditional Diffie-Hellman Ephemeral (DHE) suites as ECDHE offers similar security with better performance.
+3.  **Ensure TLSv1.2 or Higher:** While the scan shows TLSv1.2 is in use, ensure that older, insecure protocols like SSLv2, SSLv3, TLSv1.0, and TLSv1.1 are disabled. TLSv1.2 and TLSv1.3 provide better support for strong cipher suites, including those with Forward Secrecy.
+4.  **Server-Side Cipher Preference:** Ensure the server is configured to select the cipher suite from its own list of preferences (`cipher preference: server`), ensuring that a Forward Secrecy cipher suite is chosen if supported by the client.
+
+---
